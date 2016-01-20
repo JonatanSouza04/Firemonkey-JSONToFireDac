@@ -306,7 +306,7 @@ Begin
   Result := _Encode64( aText );
 
   {
-   ** Está função não funciona no IOS 8.3 maior
+   ** Esta função não funciona no IOS 8.3 maior
 
    strInput  := TStringStream.Create(aText);
   strOutput := TStringStream.Create;
@@ -344,7 +344,7 @@ Begin
   {
 
 
-  ** Está função não funciona no IOS 8.3 maior
+  ** Esta função não funciona no IOS 8.3 maior
 
   strInput  := TStringStream.Create( _Decode64(aText) );
   strOutput := TStringStream.Create;
