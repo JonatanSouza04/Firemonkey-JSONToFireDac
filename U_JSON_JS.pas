@@ -3,7 +3,7 @@ unit U_JSON_JS;
 
  {** Unit desenvolvida por Jonatan Souza
 
-   Ela é converter JSON para FireDac e FireDac para JSON, cria um arquivo simples JSON e faz o encode.
+   Converter JSON para FireDac e FireDac para JSON, cria um arquivo simples JSON e faz o encode.
    Você pode alterar o método de criptografia de sua vontade nas funções _Encode64 e _Decode64
 
 
