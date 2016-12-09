@@ -39,7 +39,7 @@ interface
 Uses System.SysUtils, System.StrUtils, System.Classes, System.Json,System.IOUtils,
      FireDAC.Comp.Client, FireDAC.Phys.Intf, FireDAC.Stan.Def, FireDAC.Stan.Pool,
      FireDAC.Stan.Async, FireDAC.Phys, Data.DB,
-     System.Hash, IdCoderMIME, IdGlobal, FMX.Dialogs, ZLib;
+     System.Hash, IdCoderMIME, IdGlobal, ZLib, Vcl.Dialogs, data.DBXJSON;
 
 
 
@@ -63,6 +63,9 @@ Uses System.SysUtils, System.StrUtils, System.Classes, System.Json,System.IOUtil
 
   Function _ZCompressString(aText: String ): String;
   Function _ZDecompressString(aText: String ): String;
+  Function _FormatFloatJSON(aText : String ) : String;
+  Function TratarString( Value : String ) : String;
+
 
 implementation
 
@@ -91,15 +94,15 @@ begin
         begin
 
              if QrFD.Fields[i].DataType In [ftInteger, ftAutoInc ] then
-              TFileJSON :=  TFileJSON + ('"' + Trim( QrFD.Fields[i].FieldName ) + '":' + Trim( IntToStr( QrFD.Fields[i].AsInteger ) ) )
+              TFileJSON :=  TFileJSON + ('"' + Trim( QrFD.Fields[i].FieldName ) + '":' + TratarString( IntToStr( QrFD.Fields[i].AsInteger ) ) )
              Else
-             if QrFD.Fields[i].DataType In [ftFloat, ftCurrency ] then
-              TFileJSON :=  TFileJSON + ('"' + Trim( QrFD.Fields[i].FieldName ) + '":' + Trim ( FormatFloat('00000.00', QrFD.Fields[i].AsFloat ) ) )
+             if (QrFD.Fields[i].DataType In [ftFloat, ftCurrency ])then
+              TFileJSON :=  TFileJSON + ('"' + Trim( QrFD.Fields[i].FieldName ) + '":' +  _FormatFloatJSON( FloatToStr(QrFD.Fields[i].AsFloat) ) )
              Else
              if QrFD.Fields[i].DataType In [ftBoolean, ftByte ] then
-              TFileJSON :=  TFileJSON + ('"' + Trim( QrFD.Fields[i].FieldName ) + '":' + Trim( LowerCase( BoolStrT ( QrFD.Fields[i].AsBoolean ) ) ) )
+              TFileJSON :=  TFileJSON + ('"' + Trim( QrFD.Fields[i].FieldName ) + '":' + TratarString( LowerCase( BoolStrT ( QrFD.Fields[i].AsBoolean ) ) ) )
              Else
-              TFileJSON :=  TFileJSON + ('"' + Trim( QrFD.Fields[i].FieldName ) + '":"' + Trim( QrFD.Fields[i].AsString ) + '"');
+              TFileJSON :=  TFileJSON + ('"' + Trim( QrFD.Fields[i].FieldName ) + '":"' + TratarString( QrFD.Fields[i].AsString ) + '"');
 
 
              if i < QrFD.Fields.Count - 1 then
@@ -120,7 +123,8 @@ begin
      TFileJSON :=  TFileJSON + ']} ';
 
 
-     Result := _ZCompressString( TFileJSON );
+     //Result :=  TFileJSON;
+     Result := _Encode64( TFileJSON );
 
   End;
 
@@ -130,29 +134,46 @@ End;
 Function JSONToFD( Ident, sJSON : String; var FDMe : TFDMemTable ) : Boolean ;
 Var
 
- JSONRet : String;
+ JSONRet, Campo : String;
  LJSONObject: TJSONObject;
  ResultJSONArray : TJSONArray;
 
  LItem, JV :TJsonValue;
  i : Integer;
 
+ vParseResult: Integer;
 Begin
 
    LJSONObject := Nil;
 
-   JSONRet     := _ZDecompressString( sJSON );
+   JSONRet     := _Decode64( sJSON );
+   //JSONRet     :=  sJSON;
 
    Try
-     LJSONObject := TJSONObject.ParseJSONValue(TEncoding.UTF8.GetBytes(JSONRet), 0) as TJSONObject;
+     LJSONObject  := TJSONObject.Create;
+     vParseResult := LJSONObject.Parse( BytesOf(JSONRet), 0);
+
+
+
+//     LJSONObject := TJSONObject.ParseJSONValue(TEncoding.UTF8.GetBytes(JSONRet), 0) as TJSONObject;
+
    Except On E : Exception Do
 
-    ShowMessage('Erro ao serializar o JSON ' + E.Message + #13 + JSONRet);
+    //ShowMessage('Erro ao serializar o JSON ' + E.Message + #13 + JSONRet);
    End;
 
 
    i := 0;
   // LJSONObject.Get(0);
+
+   {if LJSONObject = Nil then
+   Begin
+
+     Result := False;
+     Exit;
+
+   End;   }
+
 
    ResultJSONArray := (LJSONObject.GetValue( Ident ) as TJSONArray);
 
@@ -168,6 +189,7 @@ Begin
      JV := TJSONArray(ResultJSONArray.Get(i));
 
      FDMe.Close;
+     FDMe.FieldDefs.Clear;
 
      for LItem in TJSONArray( JV ) do
      begin
@@ -185,7 +207,7 @@ Begin
          FDMe.FieldDefs.Add(TJSONPair(LItem).JsonString.Value, ftInteger)
         Else
         if (TJSONPair(LItem).JsonValue IS TJSONNumber) And (_EFloat(TJSONPair(LItem).JsonValue.Value)) then
-         FDMe.FieldDefs.Add(TJSONPair(LItem).JsonString.Value, ftFloat)
+           FDMe.FieldDefs.Add(TJSONPair(LItem).JsonString.Value, ftFloat)
         Else
          FDMe.FieldDefs.Add(TJSONPair(LItem).JsonString.Value, ftString,9999);
 
@@ -193,25 +215,47 @@ Begin
 
   FDMe.Active := True;
 
-  for i := 0 to ResultJSONArray.Size - 1 do
-  Begin
 
-     JV := TJSONArray(ResultJSONArray.Get(i));
+    for i := 0 to ResultJSONArray.Size - 1 do
+    Begin
 
-     FDMe.Insert;
+      Try
+       JV := TJSONArray(ResultJSONArray.Get(i));
 
-     for LItem in TJSONArray( JV ) do
-     begin
+      if JV <> Nil then
+      Begin
 
-        if TJSONPair( LItem ).JsonString.Value <> '' then
-        FDMe.FieldByName( TJSONPair(LItem).JsonString.Value ).Value :=  TJSONPair(LItem).JsonValue.Value;
+       FDMe.Insert;
 
-      end;
+       for LItem in TJSONArray( JV ) do
+       begin
 
-     FDMe.Post;
 
-  End;
 
+          if ( TJSONPair( LItem ).JsonString <> Nil ) And ( TJSONPair( LItem ).JsonString.Value <> '' ) then
+          Begin
+
+            Campo := TJSONPair( LItem ).JsonString.Value + ' -> ' + TJSONPair(LItem).JsonValue.Value;
+
+
+            FDMe.FieldByName( TJSONPair(LItem).JsonString.Value ).Value :=  TJSONPair(LItem).JsonValue.Value;
+
+          End;
+        end;
+
+       FDMe.Post;
+
+     End;
+
+       Except On E : Exception Do
+         Begin
+             ShowMessage(' I-> ' + IntToStr(i) + ' - ' + E.Message);
+         End;
+
+       End;
+
+
+    End;
 
 End;
 
@@ -220,7 +264,7 @@ Function _Encode64(const S: String ): String;
 Begin
 
    if (S <> '') then
-    Result :=  TIdEncoderMIME.EncodeString( System.StrUtils.ReverseString(S), IndyTextEncoding_UTF8)
+    Result :=  TIdEncoderMIME.EncodeString(S, IndyTextEncoding_UTF8)
    Else
     Result := '';
 
@@ -231,7 +275,7 @@ Function _Decode64(const S: String ): String;
 Begin
 
    if (S <> '') then
-    Result := ReverseString( TIdDecoderMIME.DecodeString(S, IndyTextEncoding_UTF8) )
+    Result := TIdDecoderMIME.DecodeString(S, IndyTextEncoding_UTF8)
    Else
     Result := '';
 
@@ -271,13 +315,23 @@ End;
 
 
 Function _EData( dValor : String ) : Boolean;
+Var
+ Dt : TDateTime;
 Begin
 
-  Result := False;
+   if (POS('/',dValor) > 0) And (Length(dValor) >= 8) then
+   Begin
 
-  If ( ( POS('/', dValor ) > 0 ) Or ( POS('-', dValor ) > 0 ) )
+     Dt := ( StrToDateTimeDef( dValor, 0 ) );
+     Result := ( Dt > 0 ) And (Length(dValor) <= 20);
+
+   End
+   Else
+   Result := False;
+
+  {If ( ( POS('/', dValor ) > 0 ) Or ( POS('-', dValor ) > 0 ) )
   And ( Length(dValor) >= 8 ) And ( StrToDateTimeDef(dValor,-1) > 0 ) then
-  Result := True;
+  Result := True; }
 
 End;
 
@@ -306,7 +360,7 @@ Begin
   Result := _Encode64( aText );
 
   {
-   ** Esta função não funciona no IOS 8.3 maior
+   ** Está função não funciona no IOS 8.3 maior
 
    strInput  := TStringStream.Create(aText);
   strOutput := TStringStream.Create;
@@ -344,7 +398,7 @@ Begin
   {
 
 
-  ** Esta função não funciona no IOS 8.3 maior
+  ** Está função não funciona no IOS 8.3 maior
 
   strInput  := TStringStream.Create( _Decode64(aText) );
   strOutput := TStringStream.Create;
@@ -366,6 +420,33 @@ Begin
   End;
    }
 end;
+
+Function TratarString( Value : String ) : String;
+Begin
+
+  Result := Trim(StringReplace( Value, '"','',[rfReplaceAll]));
+  Result := Trim(StringReplace( Result, '\','/',[rfReplaceAll]));
+
+
+End;
+
+
+Function _FormatFloatJSON(aText : String ) : String;
+Var
+ Ret : String;
+Begin
+
+   if (POS(',',aText) > 0) And (POS('.',aText)> 0)  then
+    Ret := StringReplace(aText,'.','',[rfReplaceAll])
+   Else
+    Ret := aText;
+
+   Ret := FormatFloat('0.00',StrToFloat(Ret));
+   Ret := StringReplace(ret,',','.',[rfReplaceAll]);
+
+   Result := Ret;
+
+End;
 
 
 end.
